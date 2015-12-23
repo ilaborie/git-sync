@@ -1,0 +1,4 @@
+[package]
+name = "git-sync"
+version = "0.1.0"
+authors = ["Igor Laborie <ilaborie@gmail.com>"]

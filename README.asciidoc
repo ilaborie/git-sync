@@ -1,0 +1,43 @@
+README
+======
+
+git-sync [options] [remotes:origin] [branches:master,develop]
+
+idea:
+  for each option
+    trace options
+
+  for each folder (-r for recursive)
+    if git repo
+      syncRepo
+    else
+      trace skip
+    end
+
+syncRepo
+  for each remotes
+    c
+    fetch remote
+    for each branches
+      if checkFastForward
+        merge
+      else
+        warn
+      end
+    end
+  end
+
+options
+  verbose (--verbose, -v)
+  quiet (--quiet, -q)
+  recursive (--recursive, -r)
+  remotes
+  branches
+    default: origin
+    ex: branch1,branch2,branch* (glob)
+
+API:
+  path: stdlib ?
+  git: git2 (https://crates.io/crates/git2/)
+  log: log (https://crates.io/crates/log/)
+  options: getopts (https://crates.io/crates/getopts/)
