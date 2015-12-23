@@ -5,3 +5,4 @@ authors = ["Igor Laborie <ilaborie@gmail.com>"]
 
 [dependencies]
 getopts = "0.2"
+git2 = "0.3"

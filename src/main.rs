@@ -31,7 +31,7 @@ fn main() {
 
     // let dir = env::current_dir(input_dir);
     let main_dir = Path::new(&input_dir);
-    println!("Git Sync {:?}", main_dir);
+    println!("Git Sync {:?}", main_dir.to_str());
 
     // Process
     let result = process_dirs(&main_dir);
