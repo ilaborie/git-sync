@@ -1,7 +1,9 @@
 README
 ======
 
-git-sync [options] [remotes:origin] [branches:master,develop]
+<pre>
+    git-sync [options] [remotes:origin] [branches:master,develop] [path:.]
+</pre>
 
 idea:
   for each option
