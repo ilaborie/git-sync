@@ -1,11 +1,11 @@
-extern crate getopts;
+extern crate getopts; // FIXME use docopt http://docopt.org/
 extern crate git2;
 use getopts::Options;
 use std::{env, fs, io};
 // use std::fs::DirEntry;
 use std::path::Path;
 use std::error::Error;
-use git2::Repository;
+use git2::{Repository, RemoteCallbacks, FetchOptions, AutotagOption, BranchType};
 use git2::string_array::StringArray;
 
 // Main
@@ -39,8 +39,9 @@ fn main() {
     let result = process_dirs(&main_dir);
     // FIXME do not use format! for OK case
     let message = match result {
-        Ok(true) => format!("[OK] with update(s)"),
-        Ok(false) => format!("[OK] already synchronised"),
+        Ok(0) => format!("[OK] already synchronised"),
+        Ok(1) => format!("[OK] with one update"),
+        Ok(n) => format!("[OK] with {} updates", n),
         Err(err) => format!("[ERR] Oops! {}", err),
     };
     // FIXME chain call
@@ -53,8 +54,8 @@ fn print_usage(opts: Options) {
 }
 
 // Process the root dir (flat)
-fn process_dirs(parent_dir: &Path) -> io::Result<bool> {
-    let mut res = false;
+fn process_dirs(parent_dir: &Path) -> io::Result<i32> {
+    let mut updated: i32 = 0;
     for entry in try!(fs::read_dir(parent_dir)) {
         let child = try!(entry);
         let path_buf = child.path();
@@ -62,19 +63,21 @@ fn process_dirs(parent_dir: &Path) -> io::Result<bool> {
         if path.is_dir() {
             let dir_result = process_dir(&path);
             if dir_result.is_ok() {
-                res = dir_result.unwrap() || res;
+                updated = updated + (dir_result.unwrap() as i32);
             } else {
                 let git_err = dir_result.err().unwrap();
                 return Err(io::Error::new(io::ErrorKind::Other, git_err));
             }
         }
     }
-    Ok(res)
+    Ok(updated)
 }
 
+// Process one dir
 fn process_dir(dir: &Path) -> Result<bool, git2::Error> {
     let repo_path = dir.to_str().unwrap();
     let repo = Repository::open(repo_path);
+
     if repo.is_err() {
         Ok(false)// Not a git repository
     } else {
@@ -82,6 +85,7 @@ fn process_dir(dir: &Path) -> Result<bool, git2::Error> {
     }
 }
 
+// Process a repo
 fn process_repository(repo: Repository) -> Result<bool, git2::Error> {
     println!("Detected git repository {:?}", repo.path());
     let mut res = false;
@@ -100,39 +104,53 @@ fn process_repository(repo: Repository) -> Result<bool, git2::Error> {
             }
         }
     }
-    Ok(res) // FIXME
+    Ok(res)
 }
 
+// process a repo (fetch + sync branch)
 fn process_repository_remote(repo: &Repository, str_remote: &str) -> Result<bool, git2::Error> {
-    // Fetch
+    let mut updated = 0;
     let mut remote = try!(repo.find_remote(str_remote));
-
-    // Extract refspecs
-    let mut vec_refspecs = Vec::new();
-    for refspec in remote.refspecs() {
-        let rs = refspec.str();
-        if rs.is_some() {
-            let rfspc = rs.unwrap().to_owned().clone();
-            vec_refspecs.push(rfspc);
+    {
+        // Extract refspecs
+        let mut vec_refspecs = Vec::new();
+        for refspec in remote.refspecs() {
+            let rs = refspec.str();
+            if rs.is_some() {
+                let rfspc = rs.unwrap().to_owned().clone();
+                vec_refspecs.push(rfspc);
+            }
         }
-    }
-    let refspecs: Vec<&str> = vec_refspecs.iter().map(|s| s.as_ref()).collect();
-    println!("  Sync {} ({:?}) {:?}",
-             str_remote,
-             remote.url().unwrap(),
-             vec_refspecs);
-    let msg = format!("git-sync {}", str_remote).to_owned();
-    let reflog_msg: Option<&str> = Some(&*msg);
+        let refspecs: Vec<&str> = vec_refspecs.iter().map(|s| s.as_ref()).collect();
+        println!("  Sync {} ({:?}) {:?}",
+                 str_remote,
+                 remote.url().unwrap(),
+                 vec_refspecs);
+        let msg = format!("git-sync {}", str_remote).to_owned();
+        let reflog_msg: Option<&str> = Some(&*msg);
 
-    // let mut options = git2::FetchOptions::new();
-    // options.download_tags(git2::AutotagOption::All);
-    try!(remote.fetch(&refspecs[..], None /* Some(&mut options) */, reflog_msg));
-    // remote.fetch(&[refspecs], None, None);
+        let mut options = FetchOptions::new();
+        options.download_tags(AutotagOption::All);
+        let mut cbs = RemoteCallbacks::new();
+        cbs.update_tips(|label, from, to| {
+            println!("   {} {:?}..{:?}", label, from, to);
+            updated += 1;
+            true
+        });
+        options.remote_callbacks(cbs);
+        try!(remote.fetch(&refspecs[..], Some(&mut options), reflog_msg));
+        // try!(remote.fetch(&refspecs[..], None /* Some(&mut options) */, reflog_msg));
+        // remote.fetch(&[refspecs], None, None);
+    }
 
     // Branches
-    let branches = vec!["origin", "develop"];
+    let branches = vec!["master", "develop"];
     for branch in branches.iter() {
-        println!("   merge? branch {}", branch);
+        match repo.find_branch(branch, BranchType::Local) {
+            Ok(br) => println!("   try merge branch {:?}", br.name().unwrap().unwrap()),
+            _ => println!("   {} not found, no sync", branch),
+        }
     }
-    Ok(true) // FIXME
+    // let result: bool = updated > 0;
+    Ok(updated > 0)
 }
