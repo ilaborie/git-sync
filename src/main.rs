@@ -1,10 +1,14 @@
 extern crate getopts;
+extern crate git2;
 use getopts::Options;
 use std::env;
 use std::fs;
 use std::fs::DirEntry;
 use std::path::Path;
 use std::io;
+use std::error::Error;
+use git2::Repository;
+use git2::string_array::StringArray;
 
 // Main
 fn main() {
@@ -50,26 +54,50 @@ fn print_usage(opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-
 // Process the root dir (flat)
 fn process_dirs(parent_dir: &Path) -> io::Result<bool> {
     let mut res = false;
     for entry in try!(fs::read_dir(parent_dir)) {
-        let child: DirEntry = try!(entry);
+        let child = try!(entry);
         let path_buf = child.path();
         let path = path_buf.as_path();
         if path.is_dir() {
-            res = process_dir(&path) || res;
+            let dir_result = process_dir(&path);
+            if dir_result.is_ok() {
+                res = dir_result.unwrap() || res;
+            } else {
+                let gitErr = dir_result.err().unwrap();
+                return Err(io::Error::new(io::ErrorKind::Other, gitErr));
+            }
         }
     }
     Ok(res)
 }
 
-fn process_dir(dir: &Path) -> bool {
-    println!("{:?}", dir);
-    return true;
+fn process_dir(dir: &Path) -> Result<bool, git2::Error> {
+    let repo_path = dir.to_str().unwrap();
+    let repo = Repository::open(repo_path);
+    if repo.is_err() {
+        Ok(false)// Not a git repository
+    } else {
+        process_repository(repo.ok().unwrap())
+    }
 }
 
-// fn is_git_repository(dir: &Path) -> bool {
-//   unimplemented!()
-// }
+fn process_repository(repo: Repository) -> Result<bool, git2::Error> {
+    println!("Detect Git repository {:?}", repo.path());
+    // Remotes
+    let remotes: StringArray = try!(repo.remotes());
+    if remotes.len() == 0 {
+        println!("  [SKIP] no remotes");
+    } else {
+        for remote in remotes.iter() {
+            println!("  Sync {}", remote.unwrap());
+        }
+    }
+    Ok(true) // FIXME
+}
+
+fn process_repository_remote(repo: Repository, path: &str) -> Result<bool, git2::Error> {
+    Ok(true) // FIXME
+}
